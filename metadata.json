@@ -1,0 +1,9 @@
+{
+  "name": "Bitácora de Operaciones II",
+  "description": "Un sistema integral de gestión logística para operadores y administradores, con registro de viajes, seguimiento de actividades y reportes de gastos inteligentes impulsados por IA.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation",
+    "microphone"
+  ]
+}
