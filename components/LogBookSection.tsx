@@ -5,10 +5,11 @@ import {
   ArrowLeft, Plus, X, Printer, CheckCircle, ChevronRight, 
   PenTool, Eraser, CreditCard, Fuel, DollarSign, FileText, 
   Save, Edit3, Download, FileDown, Pen, Trash2, Gauge, ClipboardCheck,
-  ShieldCheck as ShieldIcon
+  ShieldCheck as ShieldIcon, Camera, Image as ImageIcon
 } from 'lucide-react';
 import { User, LogBookEntry, UserRole } from '../types';
 import { jsPDF } from 'jspdf';
+import { supabase } from '../services/supabase';
 
 const Field = memo(({ label, name, type = "text", dark = false, ...props }: any) => (
   <div className="space-y-1">
@@ -40,7 +41,6 @@ const SignaturePad = ({ value, onChange }: { value?: string, onChange: (base64: 
   const lastSignatureRef = useRef<string | undefined>(value);
   const [isDrawing, setIsDrawing] = useState(false);
 
-  // Guardar valor actual para el redibujado en resize
   useEffect(() => { lastSignatureRef.current = value; }, [value]);
 
   const initCanvas = useCallback(() => {
@@ -56,7 +56,6 @@ const SignaturePad = ({ value, onChange }: { value?: string, onChange: (base64: 
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
         
-        // Redibujar si hay firma previa tras el resize
         if (lastSignatureRef.current) {
           const img = new Image();
           img.onload = () => {
@@ -72,7 +71,6 @@ const SignaturePad = ({ value, onChange }: { value?: string, onChange: (base64: 
   useEffect(() => {
     initCanvas();
     const handleResize = () => {
-      // Guardar temporalmente lo que hay en el canvas antes de borrar
       if (canvasRef.current) lastSignatureRef.current = canvasRef.current.toDataURL();
       initCanvas();
     };
@@ -162,6 +160,7 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
   const isAdmin = user.role === UserRole.ADMIN;
   const [view, setView] = useState<'list' | 'form' | 'detail'>('list');
   const [loading, setLoading] = useState(false);
+  const [uploadingEvidence, setUploadingEvidence] = useState(false);
   const [selectedLog, setSelectedLog] = useState<LogBookEntry | null>(null);
 
   const initialFormData: Partial<LogBookEntry> = useMemo(() => ({
@@ -170,7 +169,7 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
     operator_id: '', operator_name: '',
     odo_initial: 0, odo_final: 0, total_distance: 0, client: '', destinations: '',
     fuel_cash_amount: 0, tolls_cash_amount: 0, food_amount: 0, repairs_amount: 0, maneuvers_amount: 0,
-    status: 'pending', signature: '',
+    status: 'pending', signature: '', evidence_urls: [],
     inspection: { tires: true, lights: true, fluids: true, brakes: true, documents: true, cleaned: true },
     eval_fuel_compliance: false, eval_docs_compliance: false, presented_at_load: false,
     on_time_route: false, discipline_evidence: false, final_compliance: false
@@ -191,12 +190,46 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
     
     setFormData(prev => {
       const next = { ...prev, [name]: val };
-      // Cálculo basado en valores actuales y previos de forma segura
       const currentOdoInit = name === 'odo_initial' ? Number(val) : Number(prev.odo_initial || 0);
       const currentDist = name === 'total_distance' ? Number(val) : Number(prev.total_distance || 0);
       next.odo_final = currentOdoInit + currentDist;
       return next;
     });
+  };
+
+  const handleEvidenceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingEvidence(true);
+    try {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64 = reader.result as string;
+        // 1. Guardar automáticamente en la sección de medios
+        const mediaData = {
+          url: base64,
+          name: `Evidencia Bitácora - ${formData.client || 'Sin Nombre'}`,
+          category: 'evidencia',
+          uploader_id: user.id,
+          uploader_name: user.name,
+          timestamp: new Date().toISOString()
+        };
+        await supabase.from('media_assets').insert([mediaData]);
+        
+        // 2. Vincular URL al formulario local
+        setFormData(prev => ({
+          ...prev,
+          evidence_urls: [...(prev.evidence_urls || []), base64]
+        }));
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error("Error al subir evidencia:", error);
+      alert("No se pudo cargar la foto.");
+    } finally {
+      setUploadingEvidence(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -231,8 +264,6 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
     setLoading(true);
     try {
       const doc = new jsPDF();
-      
-      // Cabecera
       doc.setFillColor(15, 23, 42);
       doc.rect(0, 0, 210, 45, 'F');
       doc.setTextColor(255, 255, 255);
@@ -242,7 +273,6 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
       doc.setFontSize(9);
       doc.text(`FOLIO: ${log.trip_num || 'N/A'}`, 15, 33);
       
-      // Datos
       doc.setTextColor(15, 23, 42);
       doc.setFontSize(11);
       doc.text("DATOS DE OPERACIÓN", 15, 60);
@@ -254,7 +284,6 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
       doc.text(`Distancia: ${log.total_distance || 0} KM`, 110, 70);
       doc.text(`Operador: ${log.operator_name || 'N/A'}`, 110, 77);
 
-      // Liquidación
       doc.setFont("helvetica", "bold");
       doc.text("RESUMEN DE GASTOS", 15, 95);
       doc.line(15, 97, 195, 97);
@@ -264,14 +293,12 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
       doc.setFont("helvetica", "bold");
       doc.text(`TOTAL LIQUIDADO: $${(log.total_expenses || 0).toLocaleString()}`, 15, 122);
 
-      // Seguridad con verificación de undefined
       doc.text("INSPECCIÓN DE SEGURIDAD", 15, 140);
       doc.line(15, 142, 195, 142);
       doc.setFont("helvetica", "normal");
       const insp = log.inspection || { tires: false, lights: false, fluids: false, brakes: false, documents: false, cleaned: false };
       doc.text(`Llantas: ${insp.tires ? 'OK' : 'X'} | Luces: ${insp.lights ? 'OK' : 'X'} | Fluidos: ${insp.fluids ? 'OK' : 'X'} | Frenos: ${insp.brakes ? 'OK' : 'X'}`, 15, 150);
 
-      // Firma
       if (log.signature) {
         try {
           doc.addImage(log.signature, 'PNG', 75, 220, 60, 22);
@@ -310,6 +337,31 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
         <form onSubmit={handleSubmit} className="space-y-6 animate-in slide-in-from-bottom-4 px-1 no-print">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-8 space-y-6">
+              {isAdmin && (
+                <section className="bg-white p-8 rounded-[2.5rem] border border-slate-200 space-y-6 shadow-sm">
+                  <h3 className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] flex items-center gap-2"><UserIcon size={18} /> Asignación de Operador</h3>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Operador Responsable</label>
+                    <select 
+                      name="operator_id" 
+                      value={formData.operator_id || ''} 
+                      onChange={(e) => {
+                        const opId = e.target.value;
+                        const opName = operators.find(o => o.id === opId)?.name || 'DISPONIBLE GLOBAL';
+                        setFormData({...formData, operator_id: opId, operator_name: opName});
+                      }}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                    >
+                      <option value="">DISPONIBLE PARA TODOS (GLOBAL)</option>
+                      {operators.map(op => (
+                        <option key={op.id} value={op.id}>{op.name}</option>
+                      ))}
+                    </select>
+                    <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest mt-1">Si seleccionas "Global", cualquier operador podrá aceptar esta bitácora.</p>
+                  </div>
+                </section>
+              )}
+
               <section className="bg-white p-8 rounded-[2.5rem] border border-slate-200 space-y-6 shadow-sm">
                 <h3 className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] flex items-center gap-2"><FileText size={18} /> Datos de Ruta</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -321,10 +373,46 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
                 </div>
               </section>
 
+              <section className="bg-white p-8 rounded-[2.5rem] border border-slate-200 space-y-6 shadow-sm">
+                <h3 className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] flex items-center gap-2"><Camera size={18} /> Evidencias (Fotos / Tickets)</h3>
+                <div className="flex flex-wrap gap-4">
+                  {(formData.evidence_urls || []).map((url, i) => (
+                    <div key={i} className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-slate-100 shadow-sm group">
+                      <img src={url} className="w-full h-full object-cover" alt="Evidencia" />
+                      <button 
+                        type="button" 
+                        onClick={() => setFormData(p => ({...p, evidence_urls: p.evidence_urls?.filter((_, idx) => idx !== i)}))}
+                        className="absolute top-1 right-1 p-1 bg-rose-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                  <label className="w-24 h-24 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 hover:border-blue-300 transition-all group">
+                    {uploadingEvidence ? (
+                      <Loader2 className="animate-spin text-blue-600" />
+                    ) : (
+                      <>
+                        <Camera className="text-slate-400 group-hover:text-blue-600" size={24} />
+                        <span className="text-[8px] font-black uppercase text-slate-400 mt-1 group-hover:text-blue-600">Tomar Foto</span>
+                      </>
+                    )}
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      capture="environment" 
+                      className="hidden" 
+                      onChange={handleEvidenceUpload} 
+                    />
+                  </label>
+                </div>
+                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Toma fotos de tickets de carga, sellos de cliente o incidentes. Se guardan automáticamente en tu historial de medios.</p>
+              </section>
+
               <section className="bg-slate-900 p-8 rounded-[2.5rem] text-white shadow-2xl space-y-6">
                 <div className="flex justify-between items-center border-b border-white/10 pb-4">
-                  <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em] flex items-center gap-2"><CreditCard size={18} /> Gastos</h3>
-                  <span className="text-2xl font-black text-emerald-400">$ {(Number(formData.odo_final || 0)).toLocaleString()}</span>
+                  <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em] flex items-center gap-2"><CreditCard size={18} /> Liquidación de Gastos</h3>
+                  <span className="text-2xl font-black text-emerald-400">$ {((Number(formData.subtotal_cash || 0) + Number(formData.subtotal_electronic || 0)).toLocaleString())}</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <Field label="Diesel Tarjeta ($)" name="fuel_card_amount" type="number" dark value={formData.fuel_card_amount} onChange={handleInputChange} />
@@ -362,7 +450,7 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
 
               <button type="submit" disabled={loading} className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black uppercase text-[10px] tracking-widest shadow-2xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-3">
                 {loading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
-                {isAdmin ? 'LANZAR BITÁCORA' : 'FINALIZAR Y ENVIAR'}
+                {isAdmin ? (formData.id ? 'ACTUALIZAR BITÁCORA' : 'LANZAR BITÁCORA') : 'FINALIZAR Y ENVIAR'}
               </button>
             </div>
           </div>
@@ -404,6 +492,18 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
                 <SummaryWidget label="Electrónico" value={`$ ${(selectedLog.subtotal_electronic || 0).toLocaleString()}`} icon={<CreditCard />} />
                 <SummaryWidget label="Efectivo" value={`$ ${(selectedLog.subtotal_cash || 0).toLocaleString()}`} icon={<DollarSign />} />
              </div>
+             
+             {selectedLog.evidence_urls && selectedLog.evidence_urls.length > 0 && (
+               <div className="mb-12">
+                 <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2"><ImageIcon size={14}/> Evidencias Registradas</h4>
+                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
+                   {selectedLog.evidence_urls.map((url, i) => (
+                     <img key={i} src={url} className="w-full aspect-square object-cover rounded-2xl border border-slate-100 shadow-sm" alt="Evidencia" />
+                   ))}
+                 </div>
+               </div>
+             )}
+
              <div className="mt-12 flex flex-col items-center border-t border-slate-100 pt-12">
                 {selectedLog.signature && <img src={selectedLog.signature} className="h-28 object-contain mb-4 mix-blend-multiply" alt="Firma" />}
                 <div className="w-64 border-t-2 border-slate-900 pt-3 text-center">

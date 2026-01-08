@@ -82,6 +82,7 @@ export interface LogBookEntry {
   final_compliance: boolean;
   
   signature?: string; // Base64 image data
+  evidence_urls?: string[]; // Array of photo URLs
   total_expenses: number;
   timestamp: string;
   status: 'pending' | 'approved' | 'rejected' | 'completed';
