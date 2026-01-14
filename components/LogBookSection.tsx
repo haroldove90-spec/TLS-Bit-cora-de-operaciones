@@ -178,6 +178,17 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
 
   const [formData, setFormData] = useState<Partial<LogBookEntry>>(initialFormData);
 
+  // Totales dinámicos para la UI
+  const currentSubtotalElectronic = useMemo(() => 
+    (Number(formData.fuel_card_amount) || 0) + (Number(formData.tolls_tag_amount) || 0)
+  , [formData.fuel_card_amount, formData.tolls_tag_amount]);
+
+  const currentSubtotalCash = useMemo(() => 
+    (Number(formData.fuel_cash_amount) || 0) + (Number(formData.tolls_cash_amount) || 0) + 
+    (Number(formData.food_amount) || 0) + (Number(formData.repairs_amount) || 0) + 
+    (Number(formData.maneuvers_amount) || 0)
+  , [formData.fuel_cash_amount, formData.tolls_cash_amount, formData.food_amount, formData.repairs_amount, formData.maneuvers_amount]);
+
   useEffect(() => {
     if (initialSelectedId) {
       const entry = logBookEntries.find(l => l.id === initialSelectedId);
@@ -191,9 +202,11 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
     
     setFormData(prev => {
       const next = { ...prev, [name]: val };
-      const currentOdoInit = name === 'odo_initial' ? Number(val) : Number(prev.odo_initial || 0);
-      const currentDist = name === 'total_distance' ? Number(val) : Number(prev.total_distance || 0);
-      next.odo_final = currentOdoInit + currentDist;
+      if (name === 'odo_initial' || name === 'total_distance') {
+        const currentOdoInit = name === 'odo_initial' ? Number(val) : Number(prev.odo_initial || 0);
+        const currentDist = name === 'total_distance' ? Number(val) : Number(prev.total_distance || 0);
+        next.odo_final = currentOdoInit + currentDist;
+      }
       return next;
     });
   };
@@ -241,31 +254,30 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
     }
     setLoading(true);
     try {
-      const subElectronic = (Number(formData.fuel_card_amount) || 0) + (Number(formData.tolls_tag_amount) || 0);
-      const subCash = (Number(formData.fuel_cash_amount) || 0) + (Number(formData.tolls_cash_amount) || 0) + (Number(formData.food_amount) || 0) + (Number(formData.repairs_amount) || 0) + (Number(formData.maneuvers_amount) || 0);
-      
       const entry: any = { 
         ...formData, 
         timestamp: new Date().toISOString(),
-        subtotal_electronic: subElectronic,
-        subtotal_cash: subCash,
-        total_expenses: subElectronic + subCash,
+        subtotal_electronic: currentSubtotalElectronic,
+        subtotal_cash: currentSubtotalCash,
+        total_expenses: currentSubtotalElectronic + currentSubtotalCash,
         status: user.role === UserRole.OPERATOR ? 'completed' : (formData.status || 'pending')
       };
 
-      // Limpieza de datos críticos para evitar errores de DB
-      if (!entry.operator_id || entry.operator_id === '') {
+      // Limpieza profunda del payload para evitar errores de DB
+      if (!entry.operator_id || entry.operator_id === '' || entry.operator_id === 'null') {
         entry.operator_id = null;
       }
       if (!entry.other_expenses) entry.other_expenses = [];
-      if (!entry.id) delete entry.id; // Evitar enviar ID vacío en inserción
+      if (!entry.id || entry.id === '') delete entry.id;
 
-      await onSave(entry);
+      const result = await onSave(entry);
+      if (!result) throw new Error("Database update returned empty");
+
       setView('list');
       setFormData(initialFormData);
     } catch (err) {
       console.error("Submit Error:", err);
-      alert("Error al guardar la bitácora. Verifica los datos e intenta de nuevo.");
+      alert("Error al guardar la bitácora. Asegúrate de haber ejecutado el SQL de fotos y verifica los campos obligatorios.");
     } finally { setLoading(false); }
   };
 
@@ -297,8 +309,8 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
       doc.text("RESUMEN DE GASTOS", 15, 95);
       doc.line(15, 97, 195, 97);
       doc.setFont("helvetica", "normal");
-      doc.text(`Subtotal Electrónico (Tarjeta/TAG): $${(log.subtotal_electronic || 0).toLocaleString()}`, 15, 105);
-      doc.text(`Subtotal Efectivo (Diesel/Casetas/Viáticos): $${(log.subtotal_cash || 0).toLocaleString()}`, 15, 112);
+      doc.text(`Subtotal Electrónico: $${(log.subtotal_electronic || 0).toLocaleString()}`, 15, 105);
+      doc.text(`Subtotal Efectivo: $${(log.subtotal_cash || 0).toLocaleString()}`, 15, 112);
       doc.setFont("helvetica", "bold");
       doc.text(`TOTAL LIQUIDADO: $${(log.total_expenses || 0).toLocaleString()}`, 15, 122);
 
@@ -309,9 +321,7 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
       doc.text(`Llantas: ${insp.tires ? 'OK' : 'X'} | Luces: ${insp.lights ? 'OK' : 'X'} | Fluidos: ${insp.fluids ? 'OK' : 'X'} | Frenos: ${insp.brakes ? 'OK' : 'X'}`, 15, 150);
 
       if (log.signature) {
-        try {
-          doc.addImage(log.signature, 'PNG', 75, 220, 60, 22);
-        } catch (e) { console.warn("Firma no pudo cargarse en PDF"); }
+        try { doc.addImage(log.signature, 'PNG', 75, 220, 60, 22); } catch (e) {}
       }
       doc.line(70, 245, 140, 245);
       doc.setFontSize(8);
@@ -366,7 +376,6 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
                         <option key={op.id} value={op.id}>{op.name}</option>
                       ))}
                     </select>
-                    <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest mt-1">Si seleccionas "Global", cualquier operador podrá aceptar esta bitácora.</p>
                   </div>
                 </section>
               )}
@@ -378,7 +387,6 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
                   <Field label="Folio / No. Viaje" name="trip_num" value={formData.trip_num} onChange={handleInputChange} required />
                   <div className="md:col-span-2"><Field label="Escalas y Destinos" name="destinations" value={formData.destinations} onChange={handleInputChange} /></div>
                   <Field label="Fecha Salida" name="departure_num" type="date" value={formData.departure_num} onChange={handleInputChange} />
-                  <Field label="Fecha Entrega Doctos" name="doc_delivery_date" type="date" value={formData.doc_delivery_date} onChange={handleInputChange} />
                 </div>
               </section>
 
@@ -388,40 +396,21 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
                   {(formData.evidence_urls || []).map((url, i) => (
                     <div key={i} className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-slate-100 shadow-sm group">
                       <img src={url} className="w-full h-full object-cover" alt="Evidencia" />
-                      <button 
-                        type="button" 
-                        onClick={() => setFormData(p => ({...p, evidence_urls: p.evidence_urls?.filter((_, idx) => idx !== i)}))}
-                        className="absolute top-1 right-1 p-1 bg-rose-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <X size={12} />
-                      </button>
+                      <button type="button" onClick={() => setFormData(p => ({...p, evidence_urls: p.evidence_urls?.filter((_, idx) => idx !== i)}))} className="absolute top-1 right-1 p-1 bg-rose-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><X size={12} /></button>
                     </div>
                   ))}
                   <label className="w-24 h-24 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 hover:border-blue-300 transition-all group">
-                    {uploadingEvidence ? (
-                      <Loader2 className="animate-spin text-blue-600" />
-                    ) : (
-                      <>
-                        <Camera className="text-slate-400 group-hover:text-blue-600" size={24} />
-                        <span className="text-[8px] font-black uppercase text-slate-400 mt-1 group-hover:text-blue-600">Tomar Foto</span>
-                      </>
-                    )}
-                    <input 
-                      type="file" 
-                      accept="image/*" 
-                      capture="environment" 
-                      className="hidden" 
-                      onChange={handleEvidenceUpload} 
-                    />
+                    {uploadingEvidence ? <Loader2 className="animate-spin text-blue-600" /> : <Camera className="text-slate-400 group-hover:text-blue-600" size={24} />}
+                    <span className="text-[8px] font-black uppercase text-slate-400 mt-1 group-hover:text-blue-600">Capturar</span>
+                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleEvidenceUpload} />
                   </label>
                 </div>
-                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Toma fotos de tickets de carga, sellos de cliente o incidentes. Se guardan automáticamente en tu historial de medios.</p>
               </section>
 
               <section className="bg-slate-900 p-8 rounded-[2.5rem] text-white shadow-2xl space-y-6">
                 <div className="flex justify-between items-center border-b border-white/10 pb-4">
                   <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em] flex items-center gap-2"><CreditCard size={18} /> Liquidación de Gastos</h3>
-                  <span className="text-2xl font-black text-emerald-400">$ {((Number(formData.subtotal_cash || 0) + Number(formData.subtotal_electronic || 0)).toLocaleString())}</span>
+                  <span className="text-2xl font-black text-emerald-400">$ {(currentSubtotalElectronic + currentSubtotalCash).toLocaleString()}</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <Field label="Diesel Tarjeta ($)" name="fuel_card_amount" type="number" dark value={formData.fuel_card_amount} onChange={handleInputChange} />
@@ -501,7 +490,6 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
                 <SummaryWidget label="Electrónico" value={`$ ${(selectedLog.subtotal_electronic || 0).toLocaleString()}`} icon={<CreditCard />} />
                 <SummaryWidget label="Efectivo" value={`$ ${(selectedLog.subtotal_cash || 0).toLocaleString()}`} icon={<DollarSign />} />
              </div>
-             
              {selectedLog.evidence_urls && selectedLog.evidence_urls.length > 0 && (
                <div className="mb-12">
                  <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2"><ImageIcon size={14}/> Evidencias Registradas</h4>
@@ -512,7 +500,6 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
                  </div>
                </div>
              )}
-
              <div className="mt-12 flex flex-col items-center border-t border-slate-100 pt-12">
                 {selectedLog.signature && <img src={selectedLog.signature} className="h-28 object-contain mb-4 mix-blend-multiply" alt="Firma" />}
                 <div className="w-64 border-t-2 border-slate-900 pt-3 text-center">
