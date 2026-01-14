@@ -178,7 +178,7 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
 
   const [formData, setFormData] = useState<Partial<LogBookEntry>>(initialFormData);
 
-  // Totales dinámicos para la UI
+  // Totales dinámicos para la UI con cálculo inmediato
   const currentSubtotalElectronic = useMemo(() => 
     (Number(formData.fuel_card_amount) || 0) + (Number(formData.tolls_tag_amount) || 0)
   , [formData.fuel_card_amount, formData.tolls_tag_amount]);
@@ -263,21 +263,28 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
         status: user.role === UserRole.OPERATOR ? 'completed' : (formData.status || 'pending')
       };
 
-      // Limpieza profunda del payload para evitar errores de DB
+      // Limpieza exhaustiva del payload para compatibilidad con Supabase
       if (!entry.operator_id || entry.operator_id === '' || entry.operator_id === 'null') {
         entry.operator_id = null;
       }
+      
+      // Asegurar que los objetos complejos sean JSON válidos
+      if (!entry.inspection) entry.inspection = initialFormData.inspection;
       if (!entry.other_expenses) entry.other_expenses = [];
       if (!entry.id || entry.id === '') delete entry.id;
 
       const result = await onSave(entry);
-      if (!result) throw new Error("Database update returned empty");
+      if (!result) throw new Error("No se pudo confirmar el guardado en la base de datos.");
 
       setView('list');
       setFormData(initialFormData);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Submit Error:", err);
-      alert("Error al guardar la bitácora. Asegúrate de haber ejecutado el SQL de fotos y verifica los campos obligatorios.");
+      // Extraer mensaje de error más útil si está disponible
+      const errorMsg = err.message?.includes('inspection') 
+        ? "La columna 'inspection' no existe en tu base de datos. Por favor ejecuta el SQL proporcionado." 
+        : "Error al guardar. Verifica tu conexión e intenta de nuevo.";
+      alert(errorMsg);
     } finally { setLoading(false); }
   };
 
