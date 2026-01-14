@@ -166,9 +166,10 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
   const initialFormData: Partial<LogBookEntry> = useMemo(() => ({
     trip_num: '', departure_num: new Date().toISOString().split('T')[0], doc_delivery_date: '', log_delivery_date: '',
     fuel_card_liters: 0, fuel_card_amount: 0, tolls_tag_amount: 0, unit_eco: '',
-    operator_id: '', operator_name: '',
+    operator_id: null, operator_name: '',
     odo_initial: 0, odo_final: 0, total_distance: 0, client: '', destinations: '',
     fuel_cash_amount: 0, tolls_cash_amount: 0, food_amount: 0, repairs_amount: 0, maneuvers_amount: 0,
+    other_expenses: [],
     status: 'pending', signature: '', evidence_urls: [],
     inspection: { tires: true, lights: true, fluids: true, brakes: true, documents: true, cleaned: true },
     eval_fuel_compliance: false, eval_docs_compliance: false, presented_at_load: false,
@@ -243,7 +244,7 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
       const subElectronic = (Number(formData.fuel_card_amount) || 0) + (Number(formData.tolls_tag_amount) || 0);
       const subCash = (Number(formData.fuel_cash_amount) || 0) + (Number(formData.tolls_cash_amount) || 0) + (Number(formData.food_amount) || 0) + (Number(formData.repairs_amount) || 0) + (Number(formData.maneuvers_amount) || 0);
       
-      const entry = { 
+      const entry: any = { 
         ...formData, 
         timestamp: new Date().toISOString(),
         subtotal_electronic: subElectronic,
@@ -251,12 +252,20 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
         total_expenses: subElectronic + subCash,
         status: user.role === UserRole.OPERATOR ? 'completed' : (formData.status || 'pending')
       };
+
+      // Limpieza de datos críticos para evitar errores de DB
+      if (!entry.operator_id || entry.operator_id === '') {
+        entry.operator_id = null;
+      }
+      if (!entry.other_expenses) entry.other_expenses = [];
+      if (!entry.id) delete entry.id; // Evitar enviar ID vacío en inserción
+
       await onSave(entry);
       setView('list');
       setFormData(initialFormData);
     } catch (err) {
-      console.error(err);
-      alert("Error al guardar la bitácora.");
+      console.error("Submit Error:", err);
+      alert("Error al guardar la bitácora. Verifica los datos e intenta de nuevo.");
     } finally { setLoading(false); }
   };
 
@@ -348,7 +357,7 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
                       onChange={(e) => {
                         const opId = e.target.value;
                         const opName = operators.find(o => o.id === opId)?.name || 'DISPONIBLE GLOBAL';
-                        setFormData({...formData, operator_id: opId, operator_name: opName});
+                        setFormData({...formData, operator_id: opId === '' ? null : opId, operator_name: opName});
                       }}
                       className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none"
                     >
