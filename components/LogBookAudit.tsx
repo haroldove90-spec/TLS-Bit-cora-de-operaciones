@@ -9,10 +9,11 @@ interface LogBookAuditProps {
 }
 
 const LogBookAudit: React.FC<LogBookAuditProps> = ({ logBookEntries }) => {
-  const completedLogs = useMemo(() => logBookEntries.filter(l => l.status === 'completed'), [logBookEntries]);
+  // EXTENSIÓN DE LÓGICA: Se elimina el filtro de 'completed' para mostrar todas las bitácoras (las 3 solicitadas)
+  const allLogs = useMemo(() => logBookEntries, [logBookEntries]);
 
   const exportToExcel = () => {
-    const data = completedLogs.map(l => ({
+    const data = allLogs.map(l => ({
       Fecha: l.timestamp,
       Cliente: l.client,
       Viaje: l.trip_num,
@@ -22,12 +23,34 @@ const LogBookAudit: React.FC<LogBookAuditProps> = ({ logBookEntries }) => {
       Total_Gastos: l.total_expenses,
       Gastos_Efectivo: l.subtotal_cash,
       Gastos_Electronicos: l.subtotal_electronic,
-      Destinos: l.destinations
+      Destinos: l.destinations,
+      Estatus: l.status.toUpperCase()
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Bitacoras_Terminadas");
-    XLSX.writeFile(wb, "Reporte_Bitacoras_Finalizadas.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, "Auditoria_Bitacoras");
+    XLSX.writeFile(wb, "Reporte_General_Bitacoras.xlsx");
+  };
+
+  // Helper para mantener el diseño visual pero con lógica dinámica de estados
+  const getStatusStyle = (status: string) => {
+    switch (status) {
+      case 'completed': return 'bg-emerald-100 text-emerald-700';
+      case 'pending': return 'bg-amber-100 text-amber-700';
+      case 'approved': return 'bg-blue-100 text-blue-700';
+      case 'rejected': return 'bg-rose-100 text-rose-700';
+      default: return 'bg-slate-100 text-slate-700';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'completed': return 'Finalizada';
+      case 'pending': return 'Pendiente';
+      case 'approved': return 'En Curso';
+      case 'rejected': return 'Rechazada';
+      default: return status;
+    }
   };
 
   return (
@@ -50,7 +73,7 @@ const LogBookAudit: React.FC<LogBookAuditProps> = ({ logBookEntries }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {completedLogs.map((log) => (
+              {allLogs.map((log) => (
                 <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
@@ -75,10 +98,17 @@ const LogBookAudit: React.FC<LogBookAuditProps> = ({ logBookEntries }) => {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[8px] font-black uppercase tracking-widest">Finalizada</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${getStatusStyle(log.status)}`}>
+                      {getStatusLabel(log.status)}
+                    </span>
                   </td>
                 </tr>
               ))}
+              {allLogs.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">No hay bitácoras para auditar.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
