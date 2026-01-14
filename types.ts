@@ -55,7 +55,7 @@ export interface LogBookEntry {
 
   // Grupo 3: Unidad y Operación
   unit_eco: string;
-  operator_id: string;
+  operator_id: string | null;
   operator_name: string;
   odo_initial: number;
   odo_final: number;
@@ -86,6 +86,7 @@ export interface LogBookEntry {
   total_expenses: number;
   timestamp: string;
   status: 'pending' | 'approved' | 'rejected' | 'completed';
+  aiAuditInsight?: string;
 }
 
 export interface AppMedia {
