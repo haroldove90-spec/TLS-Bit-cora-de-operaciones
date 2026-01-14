@@ -3,22 +3,31 @@
   "name": "TLS - Bitácora de Operaciones",
   "short_name": "TLS Bitácora",
   "description": "Sistema profesional de gestión logística y bitácora de operadores TLS.",
-  "start_url": "./",
+  "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#2563eb",
+  "orientation": "portrait",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f172a",
   "icons": [
     {
       "src": "https://tritex.com.mx/tlsicono.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "https://tritex.com.mx/tlsicono.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Nueva Bitácora",
+      "url": "./index.html?section=bitacora",
+      "icons": [{ "src": "https://tritex.com.mx/tlsicono.png", "sizes": "192x192" }]
     }
   ]
 }
