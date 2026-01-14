@@ -3,14 +3,13 @@ import React, { useState, useMemo, useRef, useEffect, useCallback, memo } from '
 import { 
   BookOpen, Calendar, Truck, User as UserIcon, Loader2, 
   ArrowLeft, Plus, X, Printer, CheckCircle, ChevronRight, 
-  PenTool, Eraser, CreditCard, Fuel, DollarSign, FileText, 
-  Save, Edit3, Download, FileDown, Pen, Trash2, Gauge, ClipboardCheck,
-  ShieldCheck as ShieldIcon, Camera, Image as ImageIcon
+  CreditCard, DollarSign, FileText, FileDown, Pen, Gauge, MapPin, Clock, ShieldCheck
 } from 'lucide-react';
 import { User, LogBookEntry, UserRole } from '../types';
 import { jsPDF } from 'jspdf';
 import { supabase } from '../services/supabase';
 
+// Componentes de formulario originales restaurados
 const Field = memo(({ label, name, type = "text", dark = false, ...props }: any) => (
   <div className="space-y-1">
     <label className={`text-[9px] font-black uppercase tracking-widest ml-1 ${dark ? 'text-slate-400' : 'text-slate-500'}`}>{label}</label>
@@ -18,20 +17,20 @@ const Field = memo(({ label, name, type = "text", dark = false, ...props }: any)
       name={name} 
       type={type} 
       {...props} 
-      className={`w-full px-4 py-3 rounded-xl font-bold text-xs outline-none transition-all ${dark ? 'bg-white/10 border-white/20 text-white focus:border-blue-500' : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-blue-600'}`} 
+      className={`w-full px-4 py-3 rounded-xl font-bold text-xs outline-none transition-all ${dark ? 'bg-white/10 border-white/20 text-white' : 'bg-slate-100 border-slate-200 text-slate-900 focus:border-slate-400'}`} 
     />
   </div>
 ));
 
 const CheckField = memo(({ label, checked, onChange }: any) => (
-  <label className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all cursor-pointer ${checked ? 'bg-blue-50 border-blue-100' : 'bg-slate-50 border-slate-100'}`}>
+  <label className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all cursor-pointer ${checked ? 'bg-slate-50 border-slate-200' : 'bg-slate-50 border-slate-100'}`}>
     <input 
       type="checkbox" 
       checked={checked} 
       onChange={(e) => onChange(e.target.checked)}
-      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+      className="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
     />
-    <span className={`text-[10px] font-black uppercase tracking-widest leading-none ${checked ? 'text-blue-700' : 'text-slate-600'}`}>{label}</span>
+    <span className={`text-[10px] font-black uppercase tracking-widest leading-none ${checked ? 'text-slate-900' : 'text-slate-500'}`}>{label}</span>
   </label>
 ));
 
@@ -115,7 +114,7 @@ const SignaturePad = ({ value, onChange }: { value?: string, onChange: (base64: 
     <div className="space-y-3">
       <div className="flex justify-between items-center px-1">
         <label className="text-[9px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
-          <Pen size={12} className="text-blue-500" /> Firma del Operador
+          <Pen size={12} className="text-slate-400" /> Firma del Operador
         </label>
         <button type="button" onClick={() => { 
           canvasRef.current?.getContext('2d')?.clearRect(0,0,2000,2000); 
@@ -160,7 +159,6 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
   const isAdmin = user.role === UserRole.ADMIN;
   const [view, setView] = useState<'list' | 'form' | 'detail'>('list');
   const [loading, setLoading] = useState(false);
-  const [uploadingEvidence, setUploadingEvidence] = useState(false);
   const [selectedLog, setSelectedLog] = useState<LogBookEntry | null>(null);
 
   const initialFormData: Partial<LogBookEntry> = useMemo(() => ({
@@ -178,21 +176,19 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
 
   const [formData, setFormData] = useState<Partial<LogBookEntry>>(initialFormData);
 
-  // Totales dinámicos para la UI con cálculo inmediato
-  const currentSubtotalElectronic = useMemo(() => 
-    (Number(formData.fuel_card_amount) || 0) + (Number(formData.tolls_tag_amount) || 0)
-  , [formData.fuel_card_amount, formData.tolls_tag_amount]);
-
-  const currentSubtotalCash = useMemo(() => 
-    (Number(formData.fuel_cash_amount) || 0) + (Number(formData.tolls_cash_amount) || 0) + 
-    (Number(formData.food_amount) || 0) + (Number(formData.repairs_amount) || 0) + 
-    (Number(formData.maneuvers_amount) || 0)
-  , [formData.fuel_cash_amount, formData.tolls_cash_amount, formData.food_amount, formData.repairs_amount, formData.maneuvers_amount]);
-
   useEffect(() => {
     if (initialSelectedId) {
       const entry = logBookEntries.find(l => l.id === initialSelectedId);
-      if (entry) { setFormData(entry); setView('form'); if (onClearSelectedId) onClearSelectedId(); }
+      if (entry) { 
+        setFormData(entry); 
+        if (entry.status === 'completed' || entry.status === 'approved') {
+          setSelectedLog(entry);
+          setView('detail');
+        } else {
+          setView('form');
+        }
+        if (onClearSelectedId) onClearSelectedId(); 
+      }
     }
   }, [initialSelectedId, logBookEntries]);
 
@@ -211,41 +207,6 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
     });
   };
 
-  const handleEvidenceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploadingEvidence(true);
-    try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64 = reader.result as string;
-        // 1. Guardar automáticamente en la sección de medios
-        const mediaData = {
-          url: base64,
-          name: `Evidencia Bitácora - ${formData.client || 'Sin Nombre'}`,
-          category: 'evidencia',
-          uploader_id: user.id,
-          uploader_name: user.name,
-          timestamp: new Date().toISOString()
-        };
-        await supabase.from('media_assets').insert([mediaData]);
-        
-        // 2. Vincular URL al formulario local
-        setFormData(prev => ({
-          ...prev,
-          evidence_urls: [...(prev.evidence_urls || []), base64]
-        }));
-      };
-      reader.readAsDataURL(file);
-    } catch (error) {
-      console.error("Error al subir evidencia:", error);
-      alert("No se pudo cargar la foto.");
-    } finally {
-      setUploadingEvidence(false);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.signature && user.role === UserRole.OPERATOR) {
@@ -254,6 +215,9 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
     }
     setLoading(true);
     try {
+      const currentSubtotalElectronic = (Number(formData.fuel_card_amount) || 0) + (Number(formData.tolls_tag_amount) || 0);
+      const currentSubtotalCash = (Number(formData.fuel_cash_amount) || 0) + (Number(formData.tolls_cash_amount) || 0) + (Number(formData.food_amount) || 0) + (Number(formData.repairs_amount) || 0) + (Number(formData.maneuvers_amount) || 0);
+      
       const entry: any = { 
         ...formData, 
         timestamp: new Date().toISOString(),
@@ -263,35 +227,18 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
         status: user.role === UserRole.OPERATOR ? 'completed' : (formData.status || 'pending')
       };
 
-      // Limpieza exhaustiva del payload para compatibilidad con Supabase
-      if (!entry.operator_id || entry.operator_id === '' || entry.operator_id === 'null') {
-        entry.operator_id = null;
-      }
-      
-      // SOLUCIÓN AL ERROR 22007: Limpiar fechas vacías
+      if (!entry.operator_id || entry.operator_id === '' || entry.operator_id === 'null') entry.operator_id = null;
       if (entry.departure_num === '') entry.departure_num = null;
       if (entry.doc_delivery_date === '') entry.doc_delivery_date = null;
       if (entry.log_delivery_date === '') entry.log_delivery_date = null;
 
-      // Asegurar que los objetos complejos sean JSON válidos
-      if (!entry.inspection) entry.inspection = initialFormData.inspection;
-      if (!entry.other_expenses) entry.other_expenses = [];
-      if (!entry.id || entry.id === '') delete entry.id;
-
       const result = await onSave(entry);
-      if (!result) throw new Error("No se pudo confirmar el guardado en la base de datos.");
+      if (!result) throw new Error("Error de guardado.");
 
       setView('list');
       setFormData(initialFormData);
     } catch (err: any) {
       console.error("Submit Error:", err);
-      let errorMsg = "Error al guardar. Verifica tu conexión e intenta de nuevo.";
-      if (err.message?.includes('inspection')) {
-        errorMsg = "La columna 'inspection' no existe. Ejecuta el SQL en Supabase.";
-      } else if (err.code === '22007') {
-        errorMsg = "Error de formato en fecha. Asegúrate de que las fechas seleccionadas sean válidas.";
-      }
-      alert(errorMsg);
     } finally { setLoading(false); }
   };
 
@@ -299,50 +246,100 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
     setLoading(true);
     try {
       const doc = new jsPDF();
+      
+      // Header Corporativo Plano
       doc.setFillColor(15, 23, 42);
-      doc.rect(0, 0, 210, 45, 'F');
+      doc.rect(0, 0, 210, 40, 'F');
       doc.setTextColor(255, 255, 255);
-      doc.setFontSize(20);
+      doc.setFontSize(18);
       doc.setFont("helvetica", "bold");
-      doc.text("REGISTRO DE BITÁCORA TLS", 15, 25);
+      doc.text("REGISTRO DE BITÁCORA TLS", 15, 20);
       doc.setFontSize(9);
-      doc.text(`FOLIO: ${log.trip_num || 'N/A'}`, 15, 33);
+      doc.text(`FOLIO DE VIAJE: ${log.trip_num || 'N/A'}`, 15, 30);
+      doc.text(`FECHA REPORTE: ${new Date(log.timestamp).toLocaleDateString()}`, 150, 20);
+      
+      // Secciones
+      const drawSection = (title: string, y: number) => {
+        doc.setTextColor(37, 99, 235);
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "bold");
+        doc.text(title, 15, y);
+        doc.setDrawColor(219, 234, 254);
+        doc.line(15, y + 2, 195, y + 2);
+        return y + 10;
+      };
+
+      let y = 55;
+      y = drawSection("DATOS DE OPERACIÓN", y);
       
       doc.setTextColor(15, 23, 42);
-      doc.setFontSize(11);
-      doc.text("DATOS DE OPERACIÓN", 15, 60);
-      doc.line(15, 62, 195, 62);
       doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Cliente: ${log.client || 'N/A'}`, 15, 70);
-      doc.text(`Unidad: ${log.unit_eco || 'N/A'}`, 15, 77);
-      doc.text(`Distancia: ${log.total_distance || 0} KM`, 110, 70);
-      doc.text(`Operador: ${log.operator_name || 'N/A'}`, 110, 77);
-
       doc.setFont("helvetica", "bold");
-      doc.text("RESUMEN DE GASTOS", 15, 95);
-      doc.line(15, 97, 195, 97);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Subtotal Electrónico: $${(log.subtotal_electronic || 0).toLocaleString()}`, 15, 105);
-      doc.text(`Subtotal Efectivo: $${(log.subtotal_cash || 0).toLocaleString()}`, 15, 112);
-      doc.setFont("helvetica", "bold");
-      doc.text(`TOTAL LIQUIDADO: $${(log.total_expenses || 0).toLocaleString()}`, 15, 122);
+      
+      const leftCol = [
+        ["Cliente:", log.client],
+        ["Ruta / Escalas:", log.destinations],
+        ["Unidad ECO:", log.unit_eco],
+        ["Operador:", log.operator_name]
+      ];
+      
+      const rightCol = [
+        ["Fecha Salida:", log.departure_num],
+        ["Km Recorrido:", `${log.total_distance || 0} KM`],
+        ["Entrega Doctos:", log.doc_delivery_date],
+        ["Entrega Bitácora:", log.log_delivery_date]
+      ];
 
-      doc.text("INSPECCIÓN DE SEGURIDAD", 15, 140);
-      doc.line(15, 142, 195, 142);
+      leftCol.forEach((item, i) => {
+        doc.setFont("helvetica", "bold");
+        doc.text(item[0], 15, y + (i * 7));
+        doc.setFont("helvetica", "normal");
+        doc.text(item[1] || '---', 45, y + (i * 7));
+      });
+
+      rightCol.forEach((item, i) => {
+        doc.setFont("helvetica", "bold");
+        doc.text(item[0], 120, y + (i * 7));
+        doc.setFont("helvetica", "normal");
+        doc.text(item[1] || '---', 155, y + (i * 7));
+      });
+
+      y += 35;
+      y = drawSection("LIQUIDACIÓN DE GASTOS", y);
+      
+      const expenses = [
+        ["Diesel (Efectivo)", log.fuel_cash_amount],
+        ["Casetas", log.tolls_cash_amount],
+        ["Viáticos", log.food_amount],
+        ["Maniobras", log.maneuvers_amount],
+        ["Varios / Reparaciones", log.repairs_amount]
+      ];
+
+      expenses.forEach((exp, i) => {
+        doc.setFont("helvetica", "normal");
+        doc.text(exp[0].toString(), 15, y + (i * 7));
+        doc.text(`$ ${(Number(exp[1]) || 0).toLocaleString()}`, 150, y + (i * 7));
+      });
+
+      y += 40;
+      doc.setFont("helvetica", "bold");
+      doc.text("TOTAL LIQUIDADO:", 15, y);
+      doc.text(`$ ${(log.total_expenses || 0).toLocaleString()} MXN`, 150, y);
+
+      y += 15;
+      y = drawSection("INSPECCIÓN TÉCNICA", y);
+      const insp = log.inspection || { tires: false, lights: false, fluids: false, brakes: false };
       doc.setFont("helvetica", "normal");
-      const insp = log.inspection || { tires: false, lights: false, fluids: false, brakes: false, documents: false, cleaned: false };
-      doc.text(`Llantas: ${insp.tires ? 'OK' : 'X'} | Luces: ${insp.lights ? 'OK' : 'X'} | Fluidos: ${insp.fluids ? 'OK' : 'X'} | Frenos: ${insp.brakes ? 'OK' : 'X'}`, 15, 150);
+      doc.text(`Llantas: ${insp.tires ? 'OK' : 'X'}  |  Luces: ${insp.lights ? 'OK' : 'X'}  |  Frenos: ${insp.brakes ? 'OK' : 'X'}  |  Fluidos: ${insp.fluids ? 'OK' : 'X'}`, 15, y);
 
       if (log.signature) {
-        try { doc.addImage(log.signature, 'PNG', 75, 220, 60, 22); } catch (e) {}
+        try { doc.addImage(log.signature, 'PNG', 75, 230, 60, 25); } catch (e) {}
       }
-      doc.line(70, 245, 140, 245);
-      doc.setFontSize(8);
-      doc.text("FIRMA DEL OPERADOR", 105, 250, { align: 'center' });
-      doc.text(log.operator_name || 'N/A', 105, 255, { align: 'center' });
+      doc.line(70, 260, 140, 260);
+      doc.text("FIRMA DEL OPERADOR", 105, 265, { align: 'center' });
+      doc.text(log.operator_name || 'N/A', 105, 270, { align: 'center' });
 
-      doc.save(`Bitacora_${log.trip_num || 'DOC'}.pdf`);
+      doc.save(`Bitacora_TLS_${log.trip_num || 'DOC'}.pdf`);
     } finally { setLoading(false); }
   };
 
@@ -358,10 +355,10 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
           {view === 'list' && isAdmin && (
-            <button onClick={() => { setFormData(initialFormData); setView('form'); }} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-blue-700 active:scale-95"><Plus size={18} /> Nueva Bitácora</button>
+            <button onClick={() => { setFormData(initialFormData); setView('form'); }} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl"><Plus size={18} /> Nueva Bitácora</button>
           )}
           {view !== 'list' && (
-            <button onClick={() => setView('list')} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-slate-200 text-slate-700 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-300 transition-all"><ArrowLeft size={18} /> Volver</button>
+            <button onClick={() => setView('list')} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-slate-200 text-slate-700 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-300"><ArrowLeft size={18} /> Volver</button>
           )}
         </div>
       </header>
@@ -372,30 +369,22 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
             <div className="lg:col-span-8 space-y-6">
               {isAdmin && (
                 <section className="bg-white p-8 rounded-[2.5rem] border border-slate-200 space-y-6 shadow-sm">
-                  <h3 className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] flex items-center gap-2"><UserIcon size={18} /> Asignación de Operador</h3>
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Operador Responsable</label>
-                    <select 
-                      name="operator_id" 
-                      value={formData.operator_id || ''} 
-                      onChange={(e) => {
-                        const opId = e.target.value;
-                        const opName = operators.find(o => o.id === opId)?.name || 'DISPONIBLE GLOBAL';
-                        setFormData({...formData, operator_id: opId === '' ? null : opId, operator_name: opName});
-                      }}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none"
-                    >
-                      <option value="">DISPONIBLE PARA TODOS (GLOBAL)</option>
-                      {operators.map(op => (
-                        <option key={op.id} value={op.id}>{op.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2"><UserIcon size={18} /> Asignación de Operador</h3>
+                  <select name="operator_id" value={formData.operator_id || ''} onChange={(e) => {
+                      const opId = e.target.value;
+                      const opName = operators.find(o => o.id === opId)?.name || 'DISPONIBLE GLOBAL';
+                      setFormData({...formData, operator_id: opId === '' ? null : opId, operator_name: opName});
+                    }}
+                    className="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none"
+                  >
+                    <option value="">DISPONIBLE PARA TODOS (GLOBAL)</option>
+                    {operators.map(op => <option key={op.id} value={op.id}>{op.name}</option>)}
+                  </select>
                 </section>
               )}
 
               <section className="bg-white p-8 rounded-[2.5rem] border border-slate-200 space-y-6 shadow-sm">
-                <h3 className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] flex items-center gap-2"><FileText size={18} /> Datos de Ruta</h3>
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2"><FileText size={18} /> Datos de Ruta</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Field label="Cliente" name="client" value={formData.client} onChange={handleInputChange} required />
                   <Field label="Folio / No. Viaje" name="trip_num" value={formData.trip_num} onChange={handleInputChange} required />
@@ -405,27 +394,10 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
                 </div>
               </section>
 
-              <section className="bg-white p-8 rounded-[2.5rem] border border-slate-200 space-y-6 shadow-sm">
-                <h3 className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] flex items-center gap-2"><Camera size={18} /> Evidencias (Fotos / Tickets)</h3>
-                <div className="flex flex-wrap gap-4">
-                  {(formData.evidence_urls || []).map((url, i) => (
-                    <div key={i} className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-slate-100 shadow-sm group">
-                      <img src={url} className="w-full h-full object-cover" alt="Evidencia" />
-                      <button type="button" onClick={() => setFormData(p => ({...p, evidence_urls: p.evidence_urls?.filter((_, idx) => idx !== i)}))} className="absolute top-1 right-1 p-1 bg-rose-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><X size={12} /></button>
-                    </div>
-                  ))}
-                  <label className="w-24 h-24 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 hover:border-blue-300 transition-all group">
-                    {uploadingEvidence ? <Loader2 className="animate-spin text-blue-600" /> : <Camera className="text-slate-400 group-hover:text-blue-600" size={24} />}
-                    <span className="text-[8px] font-black uppercase text-slate-400 mt-1 group-hover:text-blue-600">Capturar</span>
-                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleEvidenceUpload} />
-                  </label>
-                </div>
-              </section>
-
-              <section className="bg-slate-900 p-8 rounded-[2.5rem] text-white shadow-2xl space-y-6">
+              <section className="bg-slate-900 p-8 rounded-[2.5rem] text-white shadow-xl space-y-6">
                 <div className="flex justify-between items-center border-b border-white/10 pb-4">
-                  <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em] flex items-center gap-2"><CreditCard size={18} /> Liquidación de Gastos</h3>
-                  <span className="text-2xl font-black text-emerald-400">$ {(currentSubtotalElectronic + currentSubtotalCash).toLocaleString()}</span>
+                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2"><CreditCard size={18} /> Liquidación de Gastos</h3>
+                  <span className="text-2xl font-black text-emerald-400">$ {((Number(formData.fuel_card_amount) || 0) + (Number(formData.tolls_tag_amount) || 0) + (Number(formData.fuel_cash_amount) || 0) + (Number(formData.tolls_cash_amount) || 0) + (Number(formData.food_amount) || 0) + (Number(formData.repairs_amount) || 0) + (Number(formData.maneuvers_amount) || 0)).toLocaleString()}</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <Field label="Diesel Tarjeta ($)" name="fuel_card_amount" type="number" dark value={formData.fuel_card_amount} onChange={handleInputChange} />
@@ -439,8 +411,8 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
             </div>
 
             <div className="lg:col-span-4 space-y-6">
-              <section className="bg-blue-600 p-8 rounded-[2.5rem] text-white shadow-xl space-y-6">
-                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2"><ShieldIcon size={18} /> Inspección Preventiva</h3>
+              <section className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-200 space-y-6">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2"><ShieldCheck size={18} /> Inspección Preventiva</h3>
                 <div className="space-y-3">
                   <CheckField label="Llantas y Niveles" checked={formData.inspection?.tires} onChange={(v: boolean) => setFormData({...formData, inspection: {...formData.inspection!, tires: v}})} />
                   <CheckField label="Luces y Señalización" checked={formData.inspection?.lights} onChange={(v: boolean) => setFormData({...formData, inspection: {...formData.inspection!, lights: v}})} />
@@ -448,12 +420,12 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
                 </div>
               </section>
 
-              <section className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-4">
+              <section className="bg-white p-8 rounded-[2.5rem] border border-slate-200 space-y-4 shadow-sm">
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Control de Odómetro</h3>
                 <Field label="Unidad ECO" name="unit_eco" value={formData.unit_eco} onChange={handleInputChange} />
                 <Field label="Km Inicial" name="odo_initial" type="number" value={formData.odo_initial} onChange={handleInputChange} />
                 <Field label="Km Recorrido" name="total_distance" type="number" value={formData.total_distance} onChange={handleInputChange} />
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center">
+                <div className="p-4 bg-slate-50 rounded-2xl flex justify-between items-center border border-slate-100">
                   <span className="text-[9px] font-black text-slate-400 uppercase">Km Final:</span>
                   <span className="text-xl font-black text-slate-900">{formData.odo_final} KM</span>
                 </div>
@@ -461,7 +433,7 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
 
               <SignaturePad value={formData.signature} onChange={(sig) => setFormData(p => ({...p, signature: sig}))} />
 
-              <button type="submit" disabled={loading} className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black uppercase text-[10px] tracking-widest shadow-2xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-3">
+              <button type="submit" disabled={loading} className="w-full py-5 bg-slate-900 text-white rounded-[2rem] font-black uppercase text-[10px] tracking-widest shadow-2xl hover:bg-slate-800 transition-all flex items-center justify-center gap-3">
                 {loading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
                 {isAdmin ? (formData.id ? 'ACTUALIZAR BITÁCORA' : 'LANZAR BITÁCORA') : 'FINALIZAR Y ENVIAR'}
               </button>
@@ -471,13 +443,13 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
       ) : view === 'list' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 px-1">
           {logBookEntries.filter(l => isAdmin || l.operator_id === user.id || !l.operator_id).map(log => (
-            <div key={log.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-200 hover:shadow-2xl transition-all group relative overflow-hidden">
+            <div key={log.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-200 hover:shadow-xl transition-all relative overflow-hidden group">
                <div className={`absolute top-0 right-0 w-2 h-full ${log.status === 'completed' ? 'bg-emerald-500' : 'bg-blue-500'}`}></div>
                <div className="flex justify-between items-start mb-4">
                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{new Date(log.timestamp).toLocaleDateString()}</span>
                  <StatusBadge status={log.status} />
                </div>
-               <h4 className="text-xl font-black text-slate-900 leading-tight mb-2 group-hover:text-blue-600 transition-colors truncate">{log.client}</h4>
+               <h4 className="text-xl font-black text-slate-900 leading-tight mb-2 truncate group-hover:text-blue-600 transition-colors">{log.client}</h4>
                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Viaje {log.trip_num} • ECO {log.unit_eco}</p>
                <div className="mt-8 flex items-center justify-between border-t border-slate-50 pt-4">
                   <span className="text-lg font-black text-slate-900">$ {(log.total_expenses || 0).toLocaleString()}</span>
@@ -487,40 +459,105 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
           ))}
         </div>
       ) : selectedLog && (
-        <div className="animate-in zoom-in-95 duration-300 px-1">
-          <div className="bg-white p-12 rounded-[3.5rem] shadow-2xl border border-slate-200 relative overflow-hidden">
-             <div className="flex justify-between items-start border-b border-slate-100 pb-8 mb-8">
-               <div>
-                 <h3 className="text-4xl font-black text-slate-900 tracking-tighter mb-2">{selectedLog.client}</h3>
-                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2"><Truck size={14} /> Unidad {selectedLog.unit_eco} • Viaje {selectedLog.trip_num}</p>
-               </div>
-               <div className="flex gap-3 no-print">
-                 <button onClick={() => generatePDF(selectedLog)} className="p-4 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 transition-all shadow-xl shadow-blue-100"><FileDown size={24} /></button>
-                 <button onClick={() => window.print()} className="p-4 bg-slate-900 text-white rounded-2xl hover:bg-slate-800 transition-all"><Printer size={24} /></button>
-               </div>
-             </div>
-             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12">
-                <SummaryWidget label="Distancia" value={`${selectedLog.total_distance || 0} KM`} icon={<Gauge />} />
-                <SummaryWidget label="Total Liq." value={`$ ${(selectedLog.total_expenses || 0).toLocaleString()}`} icon={<DollarSign />} highlight />
-                <SummaryWidget label="Electrónico" value={`$ ${(selectedLog.subtotal_electronic || 0).toLocaleString()}`} icon={<CreditCard />} />
-                <SummaryWidget label="Efectivo" value={`$ ${(selectedLog.subtotal_cash || 0).toLocaleString()}`} icon={<DollarSign />} />
-             </div>
-             {selectedLog.evidence_urls && selectedLog.evidence_urls.length > 0 && (
-               <div className="mb-12">
-                 <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2"><ImageIcon size={14}/> Evidencias Registradas</h4>
-                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
-                   {selectedLog.evidence_urls.map((url, i) => (
-                     <img key={i} src={url} className="w-full aspect-square object-cover rounded-2xl border border-slate-100 shadow-sm" alt="Evidencia" />
-                   ))}
-                 </div>
-               </div>
-             )}
-             <div className="mt-12 flex flex-col items-center border-t border-slate-100 pt-12">
-                {selectedLog.signature && <img src={selectedLog.signature} className="h-28 object-contain mb-4 mix-blend-multiply" alt="Firma" />}
-                <div className="w-64 border-t-2 border-slate-900 pt-3 text-center">
-                  <p className="text-[10px] font-black uppercase tracking-widest">{selectedLog.operator_name}</p>
-                  <p className="text-[8px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">Nombre y Firma del Operador</p>
+        <div className="animate-in zoom-in-95 duration-300 px-1 print:p-0 print:m-0">
+          <div className="bg-white min-h-[800px] print:w-full rounded-[2.5rem] shadow-2xl border border-slate-200 overflow-hidden print:shadow-none print:border-none print:rounded-none">
+             
+             {/* HEADER UNIFICADO (SCREEN & PRINT) */}
+             <div className="bg-slate-900 p-8 text-white flex justify-between items-center">
+                <div className="space-y-1">
+                  <h3 className="text-2xl font-black tracking-tight">REGISTRO DE BITÁCORA TLS</h3>
+                  <div className="flex items-center gap-4 text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em]">
+                    <span>FOLIO: {selectedLog.trip_num || 'N/A'}</span>
+                    <span>FECHA: {new Date(selectedLog.timestamp).toLocaleDateString()}</span>
+                  </div>
                 </div>
+                <div className="flex gap-3 no-print">
+                  <button onClick={() => generatePDF(selectedLog)} className="p-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-lg"><FileDown size={20}/></button>
+                  <button onClick={() => window.print()} className="p-3 bg-slate-800 text-slate-400 rounded-xl hover:bg-slate-700 transition-all"><Printer size={20}/></button>
+                </div>
+             </div>
+
+             {/* CUERPO DEL REPORTE (DOS COLUMNAS) */}
+             <div className="p-10 space-y-10 bg-white">
+                
+                {/* SECCIÓN 1: DATOS DE OPERACIÓN */}
+                <section>
+                  <h4 className="text-sm font-black text-blue-600 uppercase tracking-widest border-b border-blue-50 pb-2 mb-6 flex items-center gap-2">
+                    <Truck size={16} /> DATOS DE OPERACIÓN
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
+                    <DataRow label="Cliente" value={selectedLog.client} />
+                    <DataRow label="Fecha Salida" value={selectedLog.departure_num} />
+                    <DataRow label="Ruta / Escalas" value={selectedLog.destinations} />
+                    <DataRow label="Distancia Total" value={`${selectedLog.total_distance || 0} KM`} />
+                    <DataRow label="Unidad ECO" value={selectedLog.unit_eco} />
+                    <DataRow label="Entrega Doctos" value={selectedLog.doc_delivery_date} />
+                    <DataRow label="Operador" value={selectedLog.operator_name} />
+                    <DataRow label="Entrega Bitácora" value={selectedLog.log_delivery_date} />
+                  </div>
+                </section>
+
+                {/* SECCIÓN 2: CONTROL DE KILOMETRAJE */}
+                <section>
+                  <h4 className="text-sm font-black text-blue-600 uppercase tracking-widest border-b border-blue-50 pb-2 mb-6 flex items-center gap-2">
+                    <Gauge size={16} /> CONTROL DE KILOMETRAJE
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-6 bg-slate-50 p-6 rounded-2xl print:bg-white print:border print:border-slate-100">
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Km Inicial</p>
+                      <p className="text-xl font-black text-slate-900">{selectedLog.odo_initial || 0}</p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Km Final</p>
+                      <p className="text-xl font-black text-slate-900">{selectedLog.odo_final || 0}</p>
+                    </div>
+                    <div className="col-span-2 md:col-span-1 border-t md:border-t-0 md:border-l border-slate-200 pt-4 md:pt-0 md:pl-6">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Recorrido</p>
+                      <p className="text-xl font-black text-blue-600">{selectedLog.total_distance || 0} KM</p>
+                    </div>
+                  </div>
+                </section>
+
+                {/* SECCIÓN 3: LIQUIDACIÓN DE GASTOS */}
+                <section>
+                  <h4 className="text-sm font-black text-blue-600 uppercase tracking-widest border-b border-blue-50 pb-2 mb-6 flex items-center gap-2">
+                    <CreditCard size={16} /> LIQUIDACIÓN DE GASTOS (EFECTIVO)
+                  </h4>
+                  <div className="space-y-3">
+                    <ExpenseLine label="Combustible Diesel" value={selectedLog.fuel_cash_amount} />
+                    <ExpenseLine label="Casetas y Peajes" value={selectedLog.tolls_cash_amount} />
+                    <ExpenseLine label="Viáticos y Alimentos" value={selectedLog.food_amount} />
+                    <ExpenseLine label="Reparaciones Mecánicas" value={selectedLog.repairs_amount} />
+                    <ExpenseLine label="Maniobras / Claves" value={selectedLog.maneuvers_amount} />
+                    <div className="pt-4 mt-4 border-t-2 border-slate-900 flex justify-between items-center">
+                      <span className="text-sm font-black text-slate-900 uppercase tracking-widest">TOTAL LIQUIDADO EN EFECTIVO</span>
+                      <span className="text-2xl font-black text-slate-900">$ {(selectedLog.subtotal_cash || 0).toLocaleString()}</span>
+                    </div>
+                  </div>
+                </section>
+
+                {/* SECCIÓN 4: INSPECCIÓN TÉCNICA */}
+                <section>
+                  <h4 className="text-sm font-black text-blue-600 uppercase tracking-widest border-b border-blue-50 pb-2 mb-6 flex items-center gap-2">
+                    <ShieldCheck size={16} /> INSPECCIÓN TÉCNICO-PREVENTIVA
+                  </h4>
+                  <div className="flex flex-wrap gap-10">
+                    <SafetyLabel label="Sist. Llantas" ok={selectedLog.inspection?.tires} />
+                    <SafetyLabel label="Sist. Luces" ok={selectedLog.inspection?.lights} />
+                    <SafetyLabel label="Sist. Frenos" ok={selectedLog.inspection?.brakes} />
+                    <SafetyLabel label="Sist. Fluidos" ok={selectedLog.inspection?.fluids} />
+                  </div>
+                </section>
+
+                {/* FIRMA FINAL */}
+                <section className="pt-16 flex flex-col items-center">
+                  {selectedLog.signature && <img src={selectedLog.signature} className="h-32 object-contain mb-2 mix-blend-multiply" alt="Firma" />}
+                  <div className="w-72 border-t-2 border-slate-900 pt-3 text-center">
+                    <p className="text-xs font-black uppercase tracking-widest leading-none">{selectedLog.operator_name || 'PENDIENTE DE FIRMA'}</p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Sello Digital de Conformidad TLS</p>
+                  </div>
+                </section>
+
              </div>
           </div>
         </div>
@@ -529,11 +566,24 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
   );
 };
 
-const SummaryWidget = ({ label, value, icon, highlight }: any) => (
-  <div className={`p-6 rounded-[2.5rem] border ${highlight ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 border-slate-100 text-slate-900'}`}>
-    <div className={`mb-3 ${highlight ? 'text-blue-400' : 'text-blue-600'}`}>{icon}</div>
-    <p className={`text-[8px] font-black uppercase tracking-widest mb-1 ${highlight ? 'text-slate-400' : 'text-slate-400'}`}>{label}</p>
-    <p className="text-xl font-black">{value}</p>
+const DataRow = ({ label, value }: { label: string, value: string | number | undefined }) => (
+  <div className="flex justify-between items-center border-b border-slate-50 py-1.5">
+    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</span>
+    <span className="text-[11px] font-black text-slate-800 uppercase text-right leading-tight max-w-[60%]">{value || '---'}</span>
+  </div>
+);
+
+const ExpenseLine = ({ label, value }: { label: string, value: number | undefined }) => (
+  <div className="flex justify-between items-center py-1">
+    <span className="text-[10px] font-bold text-slate-600 uppercase">{label}</span>
+    <span className="text-sm font-black text-slate-900 font-mono">$ {(Number(value) || 0).toLocaleString()}</span>
+  </div>
+);
+
+const SafetyLabel = ({ label, ok }: { label: string, ok?: boolean }) => (
+  <div className="flex items-center gap-2">
+    <div className={`w-3 h-3 rounded-full ${ok ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
+    <span className={`text-[10px] font-black uppercase tracking-widest ${ok ? 'text-slate-800' : 'text-slate-400 line-through'}`}>{label}</span>
   </div>
 );
 

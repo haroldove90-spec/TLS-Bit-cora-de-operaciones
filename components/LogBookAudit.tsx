@@ -1,7 +1,7 @@
 
 import React, { useMemo } from 'react';
 import { LogBookEntry } from '../types';
-import { FileDown, Search, Truck, User, Calendar, DollarSign, ExternalLink } from 'lucide-react';
+import { FileDown, Truck, Gauge } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 interface LogBookAuditProps {
@@ -9,7 +9,6 @@ interface LogBookAuditProps {
 }
 
 const LogBookAudit: React.FC<LogBookAuditProps> = ({ logBookEntries }) => {
-  // EXTENSIÓN DE LÓGICA: Se elimina el filtro de 'completed' para mostrar todas las bitácoras (las 3 solicitadas)
   const allLogs = useMemo(() => logBookEntries, [logBookEntries]);
 
   const exportToExcel = () => {
@@ -32,7 +31,6 @@ const LogBookAudit: React.FC<LogBookAuditProps> = ({ logBookEntries }) => {
     XLSX.writeFile(wb, "Reporte_General_Bitacoras.xlsx");
   };
 
-  // Helper para mantener el diseño visual pero con lógica dinámica de estados
   const getStatusStyle = (status: string) => {
     switch (status) {
       case 'completed': return 'bg-emerald-100 text-emerald-700';
@@ -54,20 +52,25 @@ const LogBookAudit: React.FC<LogBookAuditProps> = ({ logBookEntries }) => {
   };
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div><h2 className="text-2xl font-black text-slate-800 tracking-tight">Registro General de Bitácoras</h2><p className="text-slate-500 font-medium italic">Historial completo para auditoría y descarga.</p></div>
-        <button onClick={exportToExcel} className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-emerald-700 shadow-xl shadow-emerald-100 transition-all active:scale-95"><FileDown size={18} /> EXPORTAR EXCEL</button>
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 px-1">
+        <div>
+          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Registro General de Bitácoras</h2>
+          <p className="text-slate-500 font-medium italic text-xs uppercase tracking-widest">Historial completo de liquidación</p>
+        </div>
+        <button onClick={exportToExcel} className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-800 shadow-xl transition-all active:scale-95">
+          <FileDown size={18} /> EXPORTAR EXCEL
+        </button>
       </header>
 
-      <div className="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-sm">
+      <div className="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-sm print:shadow-none print:border-none">
         <div className="overflow-x-auto">
           <table className="w-full text-left min-w-[1000px]">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Información de Viaje</th>
-                <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Recorrido</th>
-                <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Monto Total</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Viaje / Folio</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Ruta / Distancia</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Monto Liquidado</th>
                 <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Operador</th>
                 <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Estatus</th>
               </tr>
@@ -77,25 +80,26 @@ const LogBookAudit: React.FC<LogBookAuditProps> = ({ logBookEntries }) => {
                 <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="p-2 bg-blue-50 text-blue-600 rounded-xl"><Truck size={18}/></div>
+                      <div className="p-2 bg-slate-900 text-white rounded-xl"><Truck size={16}/></div>
                       <div>
-                        <p className="text-sm font-black text-slate-900">{log.client}</p>
+                        <p className="text-sm font-black text-slate-900 uppercase tracking-tighter">{log.client}</p>
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Folio: {log.trip_num} • ECO: {log.unit_eco}</p>
                       </div>
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <p className="text-xs font-bold text-slate-800">{log.total_distance || 0} KM</p>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase">{log.destinations || 'S/D'}</p>
-                  </td>
-                  <td className="px-6 py-4">
-                    <p className="text-sm font-black text-emerald-600">$ {log.total_expenses.toLocaleString()}</p>
-                    <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Liquidado</p>
-                  </td>
-                  <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
-                       <span className="text-xs font-bold text-slate-700">{log.operator_name}</span>
+                       <Gauge size={12} className="text-blue-500" />
+                       <p className="text-xs font-black text-slate-800">{log.total_distance || 0} KM</p>
                     </div>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase truncate max-w-[200px]">{log.destinations || 'Ruta Local'}</p>
+                  </td>
+                  <td className="px-6 py-4">
+                    <p className="text-sm font-black text-slate-900">$ {log.total_expenses.toLocaleString()}</p>
+                    <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Efectivo + Tarjeta</p>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="text-xs font-black text-slate-700 uppercase">{log.operator_name || 'Sin Asignar'}</span>
                   </td>
                   <td className="px-6 py-4 text-right">
                     <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${getStatusStyle(log.status)}`}>
@@ -106,7 +110,7 @@ const LogBookAudit: React.FC<LogBookAuditProps> = ({ logBookEntries }) => {
               ))}
               {allLogs.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">No hay bitácoras para auditar.</td>
+                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic font-bold uppercase tracking-widest text-[10px]">Sin registros para mostrar.</td>
                 </tr>
               )}
             </tbody>
