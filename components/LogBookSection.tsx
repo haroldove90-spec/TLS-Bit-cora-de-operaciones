@@ -268,6 +268,11 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
         entry.operator_id = null;
       }
       
+      // SOLUCIÓN AL ERROR 22007: Limpiar fechas vacías
+      if (entry.departure_num === '') entry.departure_num = null;
+      if (entry.doc_delivery_date === '') entry.doc_delivery_date = null;
+      if (entry.log_delivery_date === '') entry.log_delivery_date = null;
+
       // Asegurar que los objetos complejos sean JSON válidos
       if (!entry.inspection) entry.inspection = initialFormData.inspection;
       if (!entry.other_expenses) entry.other_expenses = [];
@@ -280,10 +285,12 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
       setFormData(initialFormData);
     } catch (err: any) {
       console.error("Submit Error:", err);
-      // Extraer mensaje de error más útil si está disponible
-      const errorMsg = err.message?.includes('inspection') 
-        ? "La columna 'inspection' no existe en tu base de datos. Por favor ejecuta el SQL proporcionado." 
-        : "Error al guardar. Verifica tu conexión e intenta de nuevo.";
+      let errorMsg = "Error al guardar. Verifica tu conexión e intenta de nuevo.";
+      if (err.message?.includes('inspection')) {
+        errorMsg = "La columna 'inspection' no existe. Ejecuta el SQL en Supabase.";
+      } else if (err.code === '22007') {
+        errorMsg = "Error de formato en fecha. Asegúrate de que las fechas seleccionadas sean válidas.";
+      }
       alert(errorMsg);
     } finally { setLoading(false); }
   };
@@ -394,6 +401,7 @@ const LogBookSection: React.FC<LogBookSectionProps> = ({
                   <Field label="Folio / No. Viaje" name="trip_num" value={formData.trip_num} onChange={handleInputChange} required />
                   <div className="md:col-span-2"><Field label="Escalas y Destinos" name="destinations" value={formData.destinations} onChange={handleInputChange} /></div>
                   <Field label="Fecha Salida" name="departure_num" type="date" value={formData.departure_num} onChange={handleInputChange} />
+                  <Field label="Fecha Entrega Doctos" name="doc_delivery_date" type="date" value={formData.doc_delivery_date} onChange={handleInputChange} />
                 </div>
               </section>
 
